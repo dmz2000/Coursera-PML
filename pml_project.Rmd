@@ -1,0 +1,75 @@
+---
+title: "Practical Machine Learning Project"
+date: "Saturday, January 24, 2015"
+---
+
+### Introduction
+
+The goal of the project is to build a model from data collected from accelerometers, to predict the manner in which a group of participants perform the Dumbbell Bicep Curl exercise. There are five specifications for the exercise, contained in the 'classe' variable. The predictive model will be used to evaluate 20 test cases submitted separately. 
+```{r results='hide', message=FALSE, warning=FALSE}
+library(caret); library(ggplot2); library(randomForest) 
+set.seed(32323)   # Set a seed so results can be reproducible
+```
+
+### Loading Data and Exploratory Data Analysis
+
+Let's begin by loading in the training and testing sets from the working directory:
+```{r message=FALSE}
+training <- read.csv("pml-training.csv", header=TRUE)
+testing <- read.csv("pml-testing.csv", header=TRUE)
+```
+
+Let's inspect the training data set with summary(training). Eyeballing the outcomes, it seems like many rows contain more than 97% NAs or blanks. Predictors with that many missing values will not be useful for building a model, and additionally may cause problems in tree-based models. So I will filter those out to make the dataset size manageable. Additionally, we would want to remove the first five columns of X, user_name, raw_timestamp_part_1,	raw_timestamp_part_2 and cvtd_timestamp from inclusion in the model since they may just add unwanted noise.
+
+```{r}
+# check the number of elements in each columns of either NA or blank
+columns <- colSums(is.na(training))+colSums(training=="", na.rm=TRUE) 
+colsums <- c(); for (i in 1:160) {colsums[i]=columns[[i]]}  
+training.new <- training[, colsums < 19000]
+testing.new <- testing[, colsums <19000]
+# remove the first five columns
+training.new <- training.new[, -c(1:5)]
+testing.new <- testing.new[, -c(1:5)]
+```
+
+### Model Building and Cross Validation
+
+We will fit a random forest model using the caret library. Random forest is chosen for its ability to classify large amounts of data with high accuracy and is not prone to the overfitting problem of decision trees. Typically for modeling building we can include cross validation by providing the number of folds as specification in the train control parameter, to split the training data into different training/testing sets to better evaluate out of sample errors. 
+
+For random forest, there is no need for cross-validation to get an unbiased estimate. The out of bag error is estimated internally within the algorithm since every tree was built from a different bootstrapped sample from the training data. Observations left out from the tree construction are used as test cases. The classification for a particular observation would be the voted class across all time the observation was out of the bag. The OOB error would be the proportion that the observations' classifications are not equal to the true class.  
+```{r}
+modelFit <- train(classe ~ ., data=training.new, method="rf", importance = T)
+```
+
+Let's inspect the final model that was fitted and the confusion matrix:
+```{r}
+finalFit <- modelFit$finalModel
+finalFit
+```
+
+The model appears to be performing quite well, with an OOB estimate of error rate being just 0.14%. With such a strong model, we should be able to successfully classify all 20 test cases provided for the project. We can also take a look the importance of variables in classifying for each classe of the exercise if wished by printing out importance, which I will skip:
+```{r}
+importance <- varImp(finalFit)
+```
+
+### Prediction Submission
+
+Let's use the final model to predict the classification for our 20 test cases. 
+```{r}
+answers <- predict(modelFit, testing.new[, c(-55)]) #exclude the problem id column
+```
+
+Apply the write file function from the Coursera submission page to our answer set:
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
+From the submission results, it appears that all 20 test cases were predicted correctly!
